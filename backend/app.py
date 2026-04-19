@@ -18,8 +18,7 @@ from .model import SymFormer as ModelClass
 # from .model import MockSymFormer as ModelClass
 
 # Constants & Class Labels
-# Dynamically lock the path to the best_model.pth file sitting next to this python script
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best_model.pth")
+MODEL_PATH = os.getenv("MODEL_PATH", "./best_model.pth")
 CLASS_LABELS = [
     {"id": 0, "name": "Healthy", "color": "#22c55e", "desc": "No abnormalities detected."},
     {"id": 1, "name": "Sick (Non-TB)", "color": "#f59e0b", "desc": "Abnormalities consistent with non-TB illness found."},
