@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chest X-Ray Analysis - SymFormer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        /* CSS Variables */
+        :root {
+            --bg-color: #0a0c0f;
+            --surface-color: #111418;
+            --surface-hover: #1a1e24;
+            --border-color: #242a33;
+            --text-main: #f0f4f8;
+            --text-muted: #8b9bb4;
+            --accent-cyan: #00d4ff;
+            --error-red: #ef4444;
+            --color-healthy: #22c55e;
+            --color-sick-non-tb: #f59e0b;
+            --color-active-tb: #ef4444;
+            --color-latent-tb: #f97316;
+            
+            --font-heading: 'Syne', sans-serif;
+            --font-body: 'DM Sans', sans-serif;
+            --font-mono: 'DM Mono', monospace;
+        }
+
+        /* Base & Global Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-body);
+            line-height: 1.6;
+            /* Subtle grid background */
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-position: center top;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: var(--font-heading);
+            font-weight: 700;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            outline: none;
+            font-family: var(--font-heading);
+            font-weight: 600;
+        }
+
+        /* Layout framework */
+        header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo {
+            font-size: 1.25rem;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* States Management */
+        .state { display: none; }
+        .state.active { display: block; animation: fadeIn 0.4s ease forwards; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Error Banner */
+        .error-banner {
+            display: none;
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error-red);
+            color: var(--error-red);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+        }
+        .error-banner.active { display: block; }
+
+        /* Upload State */
+        .upload-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            max-width: 600px;
+            margin: 4rem auto;
+            text-align: center;
+        }
+
+        .drop-zone {
+            width: 100%;
+            height: 300px;
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            background-color: var(--surface-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent-cyan);
+            background-color: var(--surface-hover);
+        }
+
+        .drop-zone-text {
+            color: var(--text-muted);
+            margin-top: 1rem;
+        }
+
+        #file-input { display: none; }
+
+        .preview-img {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: contain;
+            display: none;
+            background-color: #000;
+        }
+
+        .btn {
+            background-color: var(--accent-cyan);
+            color: #000;
+            padding: 1rem 2.5rem;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            margin-top: 2rem;
+            transition: transform 0.2s, opacity 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled {
+            background-color: var(--border-color);
+            color: var(--text-muted);
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Loading State */
+        .loading-container {
+            text-align: center;
+            margin: 6rem auto;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--surface-color);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem auto;
+        }
+        
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Results State */
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            .results-grid { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        /* Verdict Panel */
+        .verdict-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        
+        .verdict-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+        
+        .verdict-title { font-size: 2rem; }
+        .verdict-conf { font-family: var(--font-mono); font-size: 1.5rem; color: var(--text-muted); }
+        .verdict-desc { color: var(--text-muted); font-size: 1.1rem; }
+
+        /* Probability Bars */
+        .prob-row {
+            margin-bottom: 1.25rem;
+        }
+        .prob-label-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+        }
+        .prob-bar-bg {
+            width: 100%;
+            height: 8px;
+            background-color: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .prob-bar-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 4px;
+            transition: width 1s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        /* Heatmap Panel */
+        .heatmap-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+        .heatmap-img, .orig-img {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: contain;
+            transition: opacity 0.3s;
+        }
+        .legend {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .legend-gradient {
+            flex: 1;
+            height: 10px;
+            margin: 0 10px;
+            border-radius: 5px;
+            /* Inferno approximation */
+            background: linear-gradient(90deg, #000004, #420a68, #932667, #dd513a, #fca50a, #fcffa4);
+        }
+        .toggle-btn {
+            background-color: var(--border-color);
+            color: var(--text-main);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .toggle-btn:hover { background-color: var(--surface-hover); }
+
+        /* Bounding Box List */
+        .bbox-list {
+            list-style: none;
+            margin-top: 1rem;
+        }
+        .bbox-item {
+            font-family: var(--font-mono);
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+        .bbox-none {
+            color: var(--color-healthy);
+            font-family: var(--font-mono);
+            padding: 1rem;
+            text-align: center;
+            border: 1px dashed var(--color-healthy);
+            border-radius: 6px;
+        }
+
+        .analyze-another {
+            margin-top: 2rem;
+            background-color: transparent;
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+        .analyze-another:hover {
+            background-color: rgba(0, 212, 255, 0.1);
+        }
+
+        /* Disclaimer */
+        footer {
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <div class="logo-dot"></div>
+            SymFormer <span style="font-family: var(--font-mono); font-weight:400; color:var(--text-muted); font-size:1rem;">| Diagnostic AI</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="error-banner" class="error-banner"></div>
+
+        <!-- UPLOAD STATE -->
+        <div id="state-upload" class="state active">
+            <div class="upload-container">
+                <h1 style="margin-bottom: 1rem; font-size: 2.5rem;">Clinical X-Ray Analysis</h1>
+                <p style="color: var(--text-muted); margin-bottom: 2rem; max-width: 80%;">Upload a PA/AP chest radiograph. The SymFormer model will scan the image for tuberculosis indicators and delineate abnormal regions.</p>
+                
+                <div class="drop-zone" id="drop-zone">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <h3 style="color: var(--text-main);">Drag & drop image here</h3>
+                    <p class="drop-zone-text">or click to browse from device</p>
+                    <img id="preview-img" class="preview-img" src="" alt="Preview">
+                    <input type="file" id="file-input" accept="image/jpeg, image/png, image/jpg">
+                </div>
+
+                <button id="analyze-btn" class="btn" disabled>Analyze Radiograph</button>
+            </div>
+        </div>
+
+        <!-- LOADING STATE -->
+        <div id="state-loading" class="state">
+            <div class="loading-container">
+                <div class="spinner"></div>
+                <h2>Analyzing Radiograph...</h2>
+                <p style="color: var(--text-muted); font-family:var(--font-mono); margin-top: 0.5rem;">Extracting features via SymFormer backbone</p>
+            </div>
+        </div>
+
+        <!-- RESULTS STATE -->
+        <div id="state-results" class="state">
+            
+            <div class="results-grid">
+                
+                <!-- Left Column -->
+                <div style="display:flex; flex-direction:column; gap:2rem;">
+                    <!-- Verdict Panel -->
+                    <div class="panel">
+                        <div class="verdict-header">
+                            <div id="res-dot" class="verdict-dot"></div>
+                            <div id="res-title" class="verdict-title">Active TB</div>
+                            <div id="res-conf" class="verdict-conf">87.3%</div>
+                        </div>
+                        <p id="res-desc" class="verdict-desc">Active tuberculosis detected</p>
+                    </div>
+
+                    <!-- Probabilities Panel -->
+                    <div class="panel">
+                        <h3 style="margin-bottom: 1.5rem;">Class Probabilities</h3>
+                        <div id="prob-container">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Bounding Boxes Panel -->
+                    <div class="panel">
+                        <h3 style="margin-bottom: 1rem;">Detected Lesions</h3>
+                        <div id="bbox-container">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column - Heatmap -->
+                <div class="panel">
+                    <h3 style="margin-bottom: 1rem;">Activation Heatmap</h3>
+                    <div class="heatmap-container">
+                        <img id="res-orig-img" class="orig-img" src="" alt="Original Image">
+                        <img id="res-heatmap-img" class="heatmap-img" src="" alt="Heatmap Overlay">
+                    </div>
+                    
+                    <div class="legend">
+                        <span>Low Activation</span>
+                        <div class="legend-gradient"></div>
+                        <span>High Activation</span>
+                    </div>
+
+                    <button id="toggle-heatmap-btn" class="toggle-btn">Hide Overlay</button>
+                    <button id="reset-btn" class="btn analyze-another" style="width: 100%; margin-top: 1rem;">Analyze Another Scan</button>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        ⚠ For research use only. Not a clinical diagnostic tool.
+    </footer>
+
+    <script>
+        // Data & State
+        let selectedFile = null;
+        let originalImageDataUrl = null;
+        const CLASSES = ["Healthy", "Sick (Non-TB)", "Active TB", "Latent TB"];
+        const CLASS_COLORS = ["#22c55e", "#f59e0b", "#ef4444", "#f97316"];
+
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const previewImg = document.getElementById('preview-img');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const errorBanner = document.getElementById('error-banner');
+        
+        const stateUpload = document.getElementById('state-upload');
+        const stateLoading = document.getElementById('state-loading');
+        const stateResults = document.getElementById('state-results');
+
+        // Toggle State Function
+        function setState(state) {
+            stateUpload.classList.remove('active');
+            stateLoading.classList.remove('active');
+            stateResults.classList.remove('active');
+            errorBanner.classList.remove('active');
+
+            if(state === 'upload') stateUpload.classList.add('active');
+            if(state === 'loading') stateLoading.classList.add('active');
+            if(state === 'results') {
+                stateResults.classList.add('active');
+                triggerProbBarsAnimation();
+            }
+        }
+
+        function showError(msg) {
+            errorBanner.textContent = msg;
+            errorBanner.classList.add('active');
+            setState('upload');
+            // Re-select file
+            handleFileSelect(selectedFile);
+        }
+
+        // Drag and Drop implementation
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileSelect(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                showError("Please upload a valid image file (PNG, JPG)");
+                return;
+            }
+            errorBanner.classList.remove('active');
+            selectedFile = file;
+            analyzeBtn.disabled = false;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                originalImageDataUrl = e.target.result;
+                previewImg.src = originalImageDataUrl;
+                previewImg.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // API Request
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            
+            setState('loading');
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            try {
+                // Ensure endpoint points to /predict. In Railway, this page is hosted from /
+                const response = await fetch(`${window.location.origin}/predict`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                populateResults(data);
+                setState('results');
+                
+            } catch (err) {
+                console.error(err);
+                showError("Analysis failed. Ensure the server is running and try again.");
+            }
+        });
+
+        // Setup Probability Bars
+        const probContainer = document.getElementById('prob-container');
+        function initProbBars() {
+            probContainer.innerHTML = '';
+            CLASSES.forEach((cls, idx) => {
+                probContainer.innerHTML += `
+                    <div class="prob-row">
+                        <div class="prob-label-row">
+                            <span>${cls}</span>
+                            <span id="prob-val-${idx}">0.0%</span>
+                        </div>
+                        <div class="prob-bar-bg">
+                            <div id="prob-fill-${idx}" class="prob-bar-fill" style="background-color: ${CLASS_COLORS[idx]}"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        initProbBars();
+
+        let currentProbabilities = [0,0,0,0];
+
+        function populateResults(data) {
+            // Verdict
+            document.getElementById('res-dot').style.backgroundColor = data.label_color;
+            document.getElementById('res-dot').style.boxShadow = `0 0 15px ${data.label_color}`;
+            document.getElementById('res-title').textContent = data.label_name;
+            document.getElementById('res-title').style.color = data.label_color;
+            document.getElementById('res-conf').textContent = `${data.confidence.toFixed(1)}%`;
+            document.getElementById('res-desc').textContent = data.label_desc;
+
+            // Store probs for animation
+            currentProbabilities = data.probabilities;
+
+            // BBoxes
+            const bboxContainer = document.getElementById('bbox-container');
+            bboxContainer.innerHTML = '';
+            if (!data.has_lesion || data.bboxes.length === 0) {
+                bboxContainer.innerHTML = `<div class="bbox-none">No abnormal regions detected</div>`;
+            } else {
+                let html = '<ul class="bbox-list">';
+                data.bboxes.forEach((b, i) => {
+                    html += `
+                        <li class="bbox-item">
+                            <span>Region ${i+1} <span style="color:var(--text-muted); font-size:0.8rem">(${b.x},${b.y}, ${b.w}x${b.h})</span></span>
+                            <span style="color:var(--error-red)">Score: ${b.score.toFixed(2)}</span>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+                bboxContainer.innerHTML = html;
+            }
+
+            // Heatmap
+            const resOrigImg = document.getElementById('res-orig-img');
+            const resHeatmapImg = document.getElementById('res-heatmap-img');
+            resOrigImg.src = originalImageDataUrl;
+            resHeatmapImg.src = `data:image/png;base64,${data.heatmap_b64}`;
+            resHeatmapImg.style.opacity = '1';
+            document.getElementById('toggle-heatmap-btn').textContent = "Hide Overlay";
+        }
+
+        // Delay bars animation logic
+        function triggerProbBarsAnimation() {
+            // Reset widths
+            for (let i = 0; i < 4; i++) {
+                document.getElementById(`prob-fill-${i}`).style.width = '0%';
+                document.getElementById(`prob-val-${i}`).textContent = '0.0%';
+            }
+
+            // Animate with stagger: 600ms delay per bar (which means 0, 600, 1200, 1800)
+            currentProbabilities.forEach((val, idx) => {
+                setTimeout(() => {
+                    document.getElementById(`prob-fill-${idx}`).style.width = `${val}%`;
+                    document.getElementById(`prob-val-${idx}`).textContent = `${val.toFixed(1)}%`;
+                }, idx * 600 + 100); // 100ms base delay
+            });
+        }
+
+        // Toggle Heatmap
+        document.getElementById('toggle-heatmap-btn').addEventListener('click', (e) => {
+            const hmap = document.getElementById('res-heatmap-img');
+            if (hmap.style.opacity === '0') {
+                hmap.style.opacity = '1';
+                e.target.textContent = "Hide Overlay";
+            } else {
+                hmap.style.opacity = '0';
+                e.target.textContent = "Show Overlay";
+            }
+        });
+
+        // Reset
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            selectedFile = null;
+            originalImageDataUrl = null;
+            previewImg.src = "";
+            previewImg.style.display = 'none';
+            analyzeBtn.disabled = true;
+            fileInput.value = "";
+            
+            setState('upload');
+        });
+
+    </script>
+</body>
+</html>

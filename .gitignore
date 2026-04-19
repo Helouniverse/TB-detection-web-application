@@ -1,0 +1,30 @@
+# Python Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+
+# Model Weights
+*.pth
+
+# Build & Dist
+build/
+dist/
+*.egg-info/
+
+# Training Outputs
+experiments/
+
+# Test Outputs
+*.png
+
+# Exceptions
+!model.py
+!requirements.txt
+!railway.toml
+!Dockerfile
