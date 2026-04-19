@@ -134,6 +134,11 @@ async def predict(file: UploadFile = File(...)):
         if score > 0.35:
             has_lesion = True
             
+    # If the network ultimately classifies this as Healthy, ignore any weak background bounding boxes
+    if pred_idx == 0:
+        bboxes = []
+        has_lesion = False
+            
     # Visualize heatmap
     heatmap_color = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_INFERNO)
     
