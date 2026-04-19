@@ -18,7 +18,7 @@ from .model import SymFormer as ModelClass
 # from .model import MockSymFormer as ModelClass
 
 # Constants & Class Labels
-MODEL_PATH = os.getenv("MODEL_PATH", "/Users/worrachotwongsuksawat/Documents/tbx11k-simplified/experiments/symformer_lr0.0001_bs4_20260411_170809/best_model.pth")
+MODEL_PATH = os.getenv("MODEL_PATH", "backend/best_model.pth")
 CLASS_LABELS = [
     {"id": 0, "name": "Healthy", "color": "#22c55e", "desc": "No abnormalities detected."},
     {"id": 1, "name": "Sick (Non-TB)", "color": "#f59e0b", "desc": "Abnormalities consistent with non-TB illness found."},

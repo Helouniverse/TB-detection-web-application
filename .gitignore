@@ -10,7 +10,7 @@ venv/
 .venv
 
 # Model Weights
-*.pth
+# *.pth 
 
 # Build & Dist
 build/
