@@ -143,9 +143,18 @@ async def predict(file: UploadFile = File(...)):
     # Alpha blend: 55% original, 45% heatmap
     blended = cv2.addWeighted(orig_array, 0.55, heatmap_color, 0.45, 0)
     
-    # Draw red bboxes
-    for bbox in bboxes:
+    # Draw red bboxes with Region IDs
+    for i, bbox in enumerate(bboxes):
         cv2.rectangle(blended, (bbox.x, bbox.y), (bbox.x + bbox.w, bbox.y + bbox.h), (0, 0, 255), 2)
+        
+        # Add Region Label (e.g. "Region 1")
+        text = f"Region {i+1}"
+        text_y = bbox.y - 8 if bbox.y - 8 > 20 else bbox.y + 24
+        
+        # Draw background rectangle for the text to make it highly readable
+        (t_w, t_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        cv2.rectangle(blended, (bbox.x, text_y - t_h - 4), (bbox.x + t_w + 4, text_y + 4), (0, 0, 255), -1)
+        cv2.putText(blended, text, (bbox.x + 2, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
     # Encode memory to Base64
     _, buffer = cv2.imencode('.png', blended)
