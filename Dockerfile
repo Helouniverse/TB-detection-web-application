@@ -1,3 +1,23 @@
+# ── Stage 1: resolve the Git LFS model file ──────────────────────────────────
+# We need a real Git repository so that `git lfs pull` can contact the LFS
+# server and download the actual binary.  A plain `COPY . .` only copies the
+# LFS pointer text, so we clone the repo here instead.
+FROM python:3.10-slim AS lfs-resolver
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    git-lfs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone without checking out blobs (fast), then pull only the LFS objects we
+# actually need so we don't download the entire history.
+RUN git clone --filter=blob:none --no-checkout \
+        https://github.com/Helouniverse/TB-detection-web-application.git /repo \
+    && cd /repo \
+    && git lfs install \
+    && git lfs pull --include="backend/best_model.pth"
+
+# ── Stage 2: production image ─────────────────────────────────────────────────
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -5,8 +25,6 @@ WORKDIR /app
 # Install required system packages, e.g., libgl1 for OpenCV if needed
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
-    git \
-    git-lfs \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency specifications
@@ -15,11 +33,11 @@ COPY requirements.txt .
 # Install python dependencies, pulling PyTorch from CPU-only index
 RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Copy the application source code (including LFS pointer files)
+# Copy the application source code (LFS pointer files come from the build context)
 COPY . .
 
-# Resolve Git LFS pointers — pulls the actual model binary from LFS storage
-RUN git lfs install && git lfs pull
+# Overwrite the LFS pointer with the real model binary resolved in stage 1
+COPY --from=lfs-resolver /repo/backend/best_model.pth ./backend/best_model.pth
 
 # Railway provides PORT env var, but 8000 is default local fallback
 ENV PORT=8000
